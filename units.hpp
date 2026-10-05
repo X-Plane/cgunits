@@ -76,6 +76,13 @@ namespace units
     typedef pow<detail::none, 0> unit;
 
 
+    namespace detail
+    {
+        // True if a To can be list-initialised from a From without narrowing.
+        template<typename From, typename To>
+        concept non_narrowing = requires(const From & f) { To{ f }; };
+    }
+
     // A value with a unit.
     //    Value is the type you are storing
     //    Units is the units of the value
@@ -96,7 +103,7 @@ namespace units
         {
         }
 
-        template<typename OtherValue, typename OtherUnits>
+        template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         CONSTEXPR_MEM value(const value<OtherValue, OtherUnits> & v) noexcept(noexcept(value_type{v.get()})):
             m_rep{ detail::convert<OtherUnits, Units>::fn( v.get() ) }
         {
@@ -107,34 +114,34 @@ namespace units
             return m_rep;
         }
 
-        template<typename OtherValue, typename OtherUnits>
+        template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         CONSTEXPR_MEM value & operator=(const value<OtherValue, OtherUnits> & other) noexcept(noexcept(value_type{other.get()}))
         {
             m_rep = value(other).get();
             return *this;
         }
 
-        template<typename OtherValue, typename OtherUnits>
+        template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         constexpr value operator+(const value<OtherValue, OtherUnits> & other) const noexcept(noexcept(value_type{get()+other.get()}))
         {
             return value( get() + value(other).get() );
         }
 
-        template<typename OtherValue, typename OtherUnits>
+        template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         value &operator+=(const value<OtherValue, OtherUnits> & other) noexcept(noexcept(value_type{get()+other.get()}))
         {
             m_rep += value(other).get();
             return *this;
         }
 
-        template<typename OtherValue, typename OtherUnits>
+        template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         value &operator-=(const value<OtherValue, OtherUnits> & other) noexcept(noexcept(value_type{get()-other.get()}))
         {
             m_rep -= value(other).get();
             return *this;
         }
 
-        template<typename OtherValue, typename OtherUnits>
+        template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         constexpr value operator-(const value<OtherValue, OtherUnits> & other) const noexcept(noexcept(value_type{get()-other.get()}))
         {
             return value( get() - value(other).get() );
@@ -145,7 +152,7 @@ namespace units
             return value( -get() );
         }
 
-        template<typename OtherValue, typename OtherUnits>
+        template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         value< Value, compose<Units, OtherUnits> >
             operator*(const value<OtherValue, OtherUnits> & other) const noexcept(noexcept(value_type{get()*other.get()}))
         {
@@ -163,7 +170,7 @@ namespace units
             return *this;
         }
 
-        template<typename OtherValue, typename OtherUnits>
+        template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         constexpr value< Value, compose<Units, pow<OtherUnits, -1> > >
             operator/(const value<OtherValue, OtherUnits> & other) const noexcept(noexcept(value_type{get()/other.get()}))
         {
@@ -183,41 +190,74 @@ namespace units
 
 		auto operator<=>(const value& other) const = default;
 
-        template<typename OtherValue, typename OtherUnits>
+        template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         constexpr bool operator==(const value<OtherValue, OtherUnits> & other) const noexcept(noexcept(get()==other.get()))
         {
             return get() == value(other).get();
         }
 
-        template<typename OtherValue, typename OtherUnits>
+        template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         constexpr bool operator!=(const value<OtherValue, OtherUnits> & other) const noexcept(noexcept(get()!=other.get()))
         {
             return get() != value(other).get();
         }
 
-        template<typename OtherValue, typename OtherUnits>
+        template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         constexpr bool operator<(const value<OtherValue, OtherUnits> & other) const noexcept(noexcept(get()<other.get()))
         {
             return get() < value(other).get();
         }
 
-        template<typename OtherValue, typename OtherUnits>
+        template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         constexpr bool operator<=(const value<OtherValue, OtherUnits> & other) const noexcept(noexcept(get()<=other.get()))
         {
             return get() <= value(other).get();
         }
 
-        template<typename OtherValue, typename OtherUnits>
+        template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         constexpr bool operator>(const value<OtherValue, OtherUnits> & other) const  noexcept(noexcept(get()>other.get()))
         {
             return get() > value(other).get();
         }
 
-        template<typename OtherValue, typename OtherUnits>
+        template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         constexpr bool operator>=(const value<OtherValue, OtherUnits> & other) const noexcept(noexcept(get()>=other.get()))
         {
             return get() >= value(other).get();
         }
+
+        // The members above brace-initialise value_type, so a narrowing OtherValue (double into a float
+        // value) is ill-formed there, but only diagnosed once per instantiation and not at all where
+        // narrowing warnings are off. These deleted overloads reject every such use where it is written.
+        // Convert explicitly instead, e.g. value<float, U>(float(other.get())).
+        template<typename OtherValue, typename OtherUnits> requires (!detail::non_narrowing<OtherValue, Value>)
+        value(const value<OtherValue, OtherUnits> &) = delete;
+        template<typename OtherValue, typename OtherUnits> requires (!detail::non_narrowing<OtherValue, Value>)
+        value & operator=(const value<OtherValue, OtherUnits> &) = delete;
+        template<typename OtherValue, typename OtherUnits> requires (!detail::non_narrowing<OtherValue, Value>)
+        value operator+(const value<OtherValue, OtherUnits> &) const = delete;
+        template<typename OtherValue, typename OtherUnits> requires (!detail::non_narrowing<OtherValue, Value>)
+        value & operator+=(const value<OtherValue, OtherUnits> &) = delete;
+        template<typename OtherValue, typename OtherUnits> requires (!detail::non_narrowing<OtherValue, Value>)
+        value & operator-=(const value<OtherValue, OtherUnits> &) = delete;
+        template<typename OtherValue, typename OtherUnits> requires (!detail::non_narrowing<OtherValue, Value>)
+        value operator-(const value<OtherValue, OtherUnits> &) const = delete;
+        template<typename OtherValue, typename OtherUnits> requires (!detail::non_narrowing<OtherValue, Value>)
+        void operator*(const value<OtherValue, OtherUnits> &) const = delete;
+        template<typename OtherValue, typename OtherUnits> requires (!detail::non_narrowing<OtherValue, Value>)
+        void operator/(const value<OtherValue, OtherUnits> &) const = delete;
+        template<typename OtherValue, typename OtherUnits> requires (!detail::non_narrowing<OtherValue, Value>)
+        bool operator==(const value<OtherValue, OtherUnits> &) const = delete;
+        template<typename OtherValue, typename OtherUnits> requires (!detail::non_narrowing<OtherValue, Value>)
+        bool operator!=(const value<OtherValue, OtherUnits> &) const = delete;
+        template<typename OtherValue, typename OtherUnits> requires (!detail::non_narrowing<OtherValue, Value>)
+        bool operator<(const value<OtherValue, OtherUnits> &) const = delete;
+        template<typename OtherValue, typename OtherUnits> requires (!detail::non_narrowing<OtherValue, Value>)
+        bool operator<=(const value<OtherValue, OtherUnits> &) const = delete;
+        template<typename OtherValue, typename OtherUnits> requires (!detail::non_narrowing<OtherValue, Value>)
+        bool operator>(const value<OtherValue, OtherUnits> &) const = delete;
+        template<typename OtherValue, typename OtherUnits> requires (!detail::non_narrowing<OtherValue, Value>)
+        bool operator>=(const value<OtherValue, OtherUnits> &) const = delete;
 
         value & operator++() noexcept(noexcept(value_type{get()}))
         {
