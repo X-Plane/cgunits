@@ -35,6 +35,7 @@
 #include <cmath>
 #include <boost/serialization/nvp.hpp>
 #include <iostream>
+#include <type_traits>
 
 namespace units
 {
@@ -42,6 +43,8 @@ namespace units
     {
         // Forward
         template<typename T1, typename T2> struct convert;
+        template<typename T1, typename T2> struct convertible;
+        template<typename U> struct scaling_factor;
 
         // Allows construction of no units
         struct none;
@@ -114,6 +117,14 @@ namespace units
             return m_rep;
         }
 
+        // A pure number (a ratio of like units, radians included, since rad is m/m) is its raw value.
+        // A scaled one (degrees, percent, km/m) is not, so it still needs an explicit conversion.
+        constexpr operator value_type() const noexcept
+            requires detail::convertible<Units, pow<detail::none, 0>>::value && (detail::scaling_factor<Units>::template fn<Value>() == Value(1))
+        {
+            return m_rep;
+        }
+
         template<typename OtherValue, typename OtherUnits> requires detail::non_narrowing<OtherValue, Value>
         CONSTEXPR_MEM value & operator=(const value<OtherValue, OtherUnits> & other) noexcept(noexcept(value_type{other.get()}))
         {
@@ -159,9 +170,12 @@ namespace units
             return value<Value, compose<Units, OtherUnits> >( get() * other.get() );
         }
 
-        constexpr value operator*(const value_type & v) const noexcept(noexcept(value_type{get()*v}))
+        // a template, so a scalar of another arithmetic type is an exact match: otherwise a pure
+        // number times an int ties with the built-in operator on its conversion to value_type
+        template<typename S> requires std::is_arithmetic_v<S>
+        constexpr value operator*(const S & v) const noexcept
         {
-            return value( get() * v );
+            return value( get() * static_cast<value_type>(v) );
         }
 
         value & operator*=(const value_type & v) noexcept(noexcept(value_type{get()*v}))
@@ -177,9 +191,10 @@ namespace units
             return value<Value, compose<Units, pow<OtherUnits, -1> > >( get() / other.get() );
         }
 
-        constexpr value operator/(const value_type & v) const noexcept(noexcept(value_type{get()/v}))
+        template<typename S> requires std::is_arithmetic_v<S>
+        constexpr value operator/(const S & v) const noexcept
         {
-            return value( get() / v );
+            return value( get() / static_cast<value_type>(v) );
         }
 
         value & operator/=(const value_type & v) noexcept(noexcept(value_type{get()/v}))
@@ -1014,9 +1029,10 @@ namespace units
         typedef compose<nautical_mile, pow<hour,-1> > knot;
         typedef compose< foot, pow<minute, -1> > fpm;
 
-        // Angles
-        typedef scale<rad, 180000000, 3141593> degree;
-        typedef scale<rad, 200000000, 3141593> grad;
+        // Angles. The ratios are 180/pi and 200/pi, exact to double precision, so a conversion agrees
+        // with std trig on M_PI radians.
+        typedef scale<rad, 1204537366, 21023143> degree;
+        typedef scale<rad, 707761077, 11117485> grad;
         typedef scale< degree, 60 > degree_minute;
         typedef scale< degree_minute, 60 > degree_second;
 
